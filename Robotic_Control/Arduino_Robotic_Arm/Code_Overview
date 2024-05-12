@@ -1,0 +1,30 @@
+Overview of Scripts and Their Interactions
+____________________________________________________________________________________________________________
+Arduino Script (arduino_python_script3.ino):
+
+Function: Controls the Braccio robotic arm via serial commands from a connected computer.
+Interaction: Receives commands from the Python scripts to manipulate the robotic arm based on the computed angles and commands for different positions or actions.
+
+____________________________________________________________________________________________________________
+Aruco Detection Scripts (ArucoDetection_definitions.py and Aruco_detection_V2):
+
+Function: These scripts handle the detection of ArUco markers using a camera system. They process video frames to identify markers, which are then used to calculate the position and orientation of objects in the robot's environment.
+Interaction: The detected positions are potentially fed into the control scripts (braccio_control_python.py) to guide the robotic arm to interact with objects at these locations.
+
+____________________________________________________________________________________________________________
+Braccio Control Python Script (braccio_control_python.py):
+
+Function: Sends specific angle and position commands to the Arduino, controlling the robotic arm. It includes functions for moving the arm to predefined positions, opening/closing the gripper, and more complex movements based on calculations from solverNNA.py.
+Interaction: Directly sends serial commands to the Arduino. Receives angle calculations and positions from solverNNA.py for precise movements.
+____________________________________________________________________________________________________________
+Solver for Neural Network Approach (solverNNA.py):
+
+Function: Calculates the joint angles needed for the robotic arm to reach a specified 3D position using inverse kinematics. Also includes functions for backlash compensation to improve the precision of movements.
+Interaction: Provides the calculated angles to braccio_control_python.py, which then sends these commands to the Arduino for physical actuation of the robotic arm.
+____________________________________________________________________________________________________________
+How They Work Together
+
+The Arduino script acts as the endpoint that directly controls the hardware based on serial inputs.
+The Aruco detection scripts serve as the sensory input, providing real-time data about the environment, which informs how the robotic arm should move.
+The control script (braccio_control_python.py) orchestrates the operation by sending commands to the Arduino and utilizing data from the ArUco detection and the solver script.
+The solver script (solverNNA.py) performs the computational heavy lifting by determining how the arm should move to achieve desired positions, factoring in physical constraints and compensations.
