@@ -7,7 +7,7 @@ Created on Tue Jan 11 20:42:49 2022
 # %%
 
 import cv2
-#import cv2.aruco as aruco
+import cv2.aruco as aruco
 import numpy as np
 import time
 

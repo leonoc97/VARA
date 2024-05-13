@@ -3,7 +3,7 @@
 #test
 from ArucoDetection_definitions import *
 import braccio_control_python #control braccio
-import keyboard
+#import keyboard
 
 start_time = time.time()
  
