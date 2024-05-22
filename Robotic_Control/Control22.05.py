@@ -1,45 +1,70 @@
-# -*- coding: utf-8 -*-
+import os
 import serial
 import time
 import numpy as np
-#from solverNNA_VARA_Kinematics import move_to_position_cart, backlash_compensation_base
+from math import acos, atan2, sqrt, degrees, radians, sin, cos
+from solverNNA_VARA_Kinematics import move_to_position_cart, backlash_compensation_base
 
-# Define servo parameters
-base = [80, 15, 140, 0]  # [default value, min value, max value, write location]
-shoulder = [40, 0, 78, 1]
-elbow = [50, 0, 100, 2]
+# Constants for your robotic arm (in mm)
+base_to_ground = 150
+h1 = 26.19
+h2 = 102.88
+V1 = 95
+h3 = 33
+l0 = V1 + h1 + base_to_ground
+l1 = h2
+l2 = 157
+l3 = 42
+
+# Servo angle limits
+BASE_MIN = 15
+BASE_MAX = 140
+SHOULDER_MIN = 0
+SHOULDER_MAX = 78
+ELBOW_MIN = 0
+ELBOW_MAX = 100
+
+# Servo parameters
+base = [80, BASE_MIN, BASE_MAX, 0]
+shoulder = [40, SHOULDER_MIN, SHOULDER_MAX, 1]
+elbow = [50, ELBOW_MIN, ELBOW_MAX, 2]
 wrist = [0, 0, 180, 3]
 wristRot = [90, 0, 180, 4]
-gripper = [73, 10, 73, 5]  # Corrected to [default value, min value, max value, write location]
+gripper = [73, 10, 73, 5]
 
 
 def constrain(val, min_val, max_val):
     return min(max_val, max(min_val, val))
 
 
-# Ensure the import points to the correct updated module
-from solverNNA_VARA_Kinematics import move_to_position_cart, backlash_compensation_base
+def initialize_prev_teta():
+    initial_teta_values = [base[0], shoulder[0], elbow[0], wrist[0], wristRot[0], gripper[0]]
+    if not os.path.exists("prev_teta.txt"):
+        with open("prev_teta.txt", "w") as text_file:
+            for angle in initial_teta_values:
+                text_file.write(f"{angle};")
+        print("Initialized prev_teta.txt with default values.")
+    else:
+        print("prev_teta.txt already exists.")
 
 
 def write_arduino(angles):
-    # Constrain angles to their respective min and max values
-    angles[0] = constrain(180 - angles[0], base[1], base[2])  # Invert degrees for base and constrain
+    angles[0] = constrain(180 - angles[0], base[1], base[2])  # invert degrees for base
     angles[1] = constrain(angles[1], shoulder[1], shoulder[2])
     angles[2] = constrain(angles[2], elbow[1], elbow[2])
-    angles[3] = constrain(180 - angles[3], wrist[1], wrist[2])  # Invert degrees for wrist and constrain
+    angles[3] = constrain(180 - angles[3], wrist[1], wrist[2])  # invert degrees for wrist
     angles[4] = constrain(angles[4], wristRot[1], wristRot[2])
     angles[5] = constrain(angles[5], gripper[1], gripper[2])
 
-    angle_string = ','.join([str(elem) for elem in angles])  # Join the list values together
+    angle_string = ','.join([str(elem) for elem in angles])
     angle_string = "P" + angle_string + ",200\n"
-    arm.write(angle_string.encode())  # .encode encodes the string to bytes
+    arm.write(angle_string.encode())
 
 
-def rotate_joint(joint):  # Rotate a specific joint to the outer limits of the joint angles
+def rotate_joint(joint):
     def calculate_joint(joint, number):
-        angle_string_def_angles = [base[0], shoulder[0], elbow[0], wrist[0], wristRot[0],
-                                   gripper[0]]  # Load in default values
-        angle_string_def_angles[joint[3]] = joint[number]  # Write minimum angle to the string
+        angle_string_def_angles = [base[0], shoulder[0], elbow[0], wrist[0], wristRot[0], gripper[0]]
+        angle_string_def_angles[joint[3]] = joint[number]
         write_arduino(angle_string_def_angles)
 
     calculate_joint(joint, 1)
@@ -74,27 +99,30 @@ def write_position(theta_base=base[0], theta_shoulder=shoulder[0], theta_elbow=e
                    theta_wristRot=wristRot[0], grip="closed"):
     if grip == "closed":
         theta_gripper = gripper[1]
-    if grip == "open":
+    elif grip == "open":
         theta_gripper = gripper[2]
+    else:
+        theta_gripper = gripper[0]
 
-    theta_base_comp = backlash_compensation_base(theta_base)  # Check if compensation is needed
-
+    theta_base_comp = backlash_compensation_base(theta_base)
     angle_string_def_angles = [theta_base_comp, theta_shoulder, theta_elbow, theta_wrist, theta_wristRot, theta_gripper]
     write_arduino(angle_string_def_angles)
 
-    # Write angle values in txt file without the compensation
     angles = [theta_base, theta_shoulder, theta_elbow, theta_wrist, theta_wristRot, theta_gripper]
-    text_file = open("prev_teta.txt", "w")
-    iteration = [0, 1, 2, 3, 4, 5]
-    for elem in iteration:
-        text_file.write(str(angles[elem]))
-        text_file.write(";")
-    text_file.close()
+    with open("prev_teta.txt", "w") as text_file:
+        for angle in angles:
+            text_file.write(f"{angle};")
 
 
 def go_to_coordinate(x, y, z, grip_position="closed"):
-    theta_list = move_to_position_cart(x, y, z)
-    write_position(theta_list[0], theta_list[1], theta_list[2], theta_list[3], grip=grip_position)
+    try:
+        theta_list = move_to_position_cart(x, y, z)
+        print(f"Calculated joint angles: {theta_list}")  # Debugging statement to print calculated joint angles
+        if len(theta_list) < 5:
+            theta_list += [0] * (5 - len(theta_list))  # Ensure theta_list has at least 5 elements
+        write_position(theta_list[0], theta_list[1], theta_list[2], theta_list[3], theta_list[4], grip=grip_position)
+    except ValueError as e:
+        print(f"Error: {e}. Coordinates ({x}, {y}, {z}) are out of reach.")
 
 
 def move_vertical(x, y):
@@ -114,13 +142,9 @@ def move_horizontal(z):
 
 
 def get_previous_teta():
-    text_file = open("prev_teta.txt", "r")
-    prev_teta_string = text_file.read()
-    text_file.close()
-
-    prev_teta = list(prev_teta_string.split(";"))
-    prev_teta.pop(6)
-    prev_teta = [int(i) for i in prev_teta]
+    with open("prev_teta.txt", "r") as text_file:
+        prev_teta_string = text_file.read()
+    prev_teta = list(map(int, prev_teta_string.split(";")[:6]))
     return prev_teta
 
 
@@ -136,8 +160,8 @@ def close_gripper():
 
 def pick_up(x, y):
     glass_pos = [310, 95]  # x, y pos of glass
-    delay = 1  # Delay between steps
-    pick_up_height = 10  # Height of the object
+    delay = 1  # delay between steps
+    pick_up_height = 10  # height of the object
     home()
     time.sleep(delay)
     go_to_coordinate(x, y, 100, "closed")
@@ -169,10 +193,9 @@ def backlash():
 
 
 def camera_compensation(x_coordinate, y_coordinate):
-    h_foam = 80  # Foam height of 80mm
+    h_foam = 80  # foam height of 80mm
     camera_position = [480, 150, 880]  # x, y, z coordinate from origin in mm
-    # Add 300 to move origin to under the camera
-    offset = 300
+    offset = 300  # add 300 to move origin to under the camera
     x_coordinate = (offset - x_coordinate) + (camera_position[0] - offset)
 
     # Perform compensation
@@ -181,6 +204,7 @@ def camera_compensation(x_coordinate, y_coordinate):
         y_compensated = y_coordinate - (h_foam / (camera_position[2] / y_coordinate))
     else:
         y_compensated = y_coordinate + (h_foam / (camera_position[2] / y_coordinate))
+
     # Subtract the offset
     x_compensated = offset - (x_compensated - (camera_position[0] - offset))
 
@@ -243,10 +267,13 @@ def main_menu():
 
 if __name__ == "__main__":
     try:
+        # Initialize prev_teta.txt with default angles if it doesn't exist
+        initialize_prev_teta()
+
         arm = serial.Serial('COM7', 115200, timeout=5)
         print("Initializing arm")
         time.sleep(2)
-        arm.write(b'H0,90,20,90,90,73,20\n')  # Home the arm at low speeds
+        arm.write(b'H0,90,20,90,90,73,20\n')
         time.sleep(2)
         main_menu()
     except serial.SerialException as e:
