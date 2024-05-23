@@ -1,253 +1,175 @@
-# -*- coding: utf-8 -*-
 import serial
 import time
+import math
 import numpy as np
-#from solverNNA_VARA_Kinematics import move_to_position_cart, backlash_compensation_base
 
-# Define servo parameters
-base = [80, 15, 140, 0]  # [default value, min value, max value, write location]
-shoulder = [40, 0, 78, 1]
-elbow = [50, 0, 100, 2]
-wrist = [0, 0, 180, 3]
-wristRot = [90, 0, 180, 4]
-gripper = [73, 10, 73, 5]  # Corrected to [default value, min value, max value, write location]
+# Open serial connection to Arduino
+arduino = serial.Serial('COM7', 115200, timeout=1)
+time.sleep(2)  # Wait for the serial connection to initialize
 
+# Define the robotic arm dimensions and constraints
+base_x = 0
+base_y = -42
+base_z = 30
+shoulder_x_offset = 0
+shoulder_y_offset = 42
+shoulder_z_offset = 46.5
+#For the elbow
+h1 = 26.19
+h2 = 102.88
+V1 = 95
+h3 = 33
+#Link length from elbow to endeffector
+l3 = 165
 
-def constrain(val, min_val, max_val):
-    return min(max_val, max(min_val, val))
-
-
-# Ensure the import points to the correct updated module
-from solverNNA_VARA_Kinematics import move_to_position_cart, backlash_compensation_base
-
-
-def write_arduino(angles):
-    # Constrain angles to their respective min and max values
-    angles[0] = constrain(180 - angles[0], base[1], base[2])  # Invert degrees for base and constrain
-    angles[1] = constrain(angles[1], shoulder[1], shoulder[2])
-    angles[2] = constrain(angles[2], elbow[1], elbow[2])
-    angles[3] = constrain(180 - angles[3], wrist[1], wrist[2])  # Invert degrees for wrist and constrain
-    angles[4] = constrain(angles[4], wristRot[1], wristRot[2])
-    angles[5] = constrain(angles[5], gripper[1], gripper[2])
-
-    angle_string = ','.join([str(elem) for elem in angles])  # Join the list values together
-    angle_string = "P" + angle_string + ",200\n"
-    arm.write(angle_string.encode())  # .encode encodes the string to bytes
+# Angle constraints for each joint
+BASE_MIN_ANGLE = 0
+BASE_MAX_ANGLE = 180
+SHOULDER_MIN_ANGLE = 15
+SHOULDER_MAX_ANGLE = 165
+ELBOW_MIN_ANGLE = 0
+ELBOW_MAX_ANGLE = 180
 
 
-def rotate_joint(joint):  # Rotate a specific joint to the outer limits of the joint angles
-    def calculate_joint(joint, number):
-        angle_string_def_angles = [base[0], shoulder[0], elbow[0], wrist[0], wristRot[0],
-                                   gripper[0]]  # Load in default values
-        angle_string_def_angles[joint[3]] = joint[number]  # Write minimum angle to the string
-        write_arduino(angle_string_def_angles)
-
-    calculate_joint(joint, 1)
-    time.sleep(2)
-    calculate_joint(joint, 2)
-    time.sleep(2)
-    calculate_joint(joint, 1)
-    time.sleep(2)
-
-
-def home(speed=20):
-    angle_string_def_angles = [base[0], shoulder[0], elbow[0], wrist[0], wristRot[0], gripper[0]]
-    write_arduino(angle_string_def_angles)
-
-
-def rotate_all_joints():
-    print("The base.")
-    rotate_joint(base)
-    print("The shoulder.")
-    rotate_joint(shoulder)
-    print("The elbow.")
-    rotate_joint(elbow)
-    print("The vertical axis of the wrist.")
-    rotate_joint(wrist)
-    print("The rotational axis of the wrist.")
-    rotate_joint(wristRot)
-    print("The gripper.")
-    rotate_joint(gripper)
-
-
-def write_position(theta_base=base[0], theta_shoulder=shoulder[0], theta_elbow=elbow[0], theta_wrist=wrist[0],
-                   theta_wristRot=wristRot[0], grip="closed"):
-    if grip == "closed":
-        theta_gripper = gripper[1]
-    if grip == "open":
-        theta_gripper = gripper[2]
-
-    theta_base_comp = backlash_compensation_base(theta_base)  # Check if compensation is needed
-
-    angle_string_def_angles = [theta_base_comp, theta_shoulder, theta_elbow, theta_wrist, theta_wristRot, theta_gripper]
-    write_arduino(angle_string_def_angles)
-
-    # Write angle values in txt file without the compensation
-    angles = [theta_base, theta_shoulder, theta_elbow, theta_wrist, theta_wristRot, theta_gripper]
-    text_file = open("prev_teta.txt", "w")
-    iteration = [0, 1, 2, 3, 4, 5]
-    for elem in iteration:
-        text_file.write(str(angles[elem]))
-        text_file.write(";")
-    text_file.close()
-
-
-def go_to_coordinate(x, y, z, grip_position="closed"):
-    theta_list = move_to_position_cart(x, y, z)
-    write_position(theta_list[0], theta_list[1], theta_list[2], theta_list[3], grip=grip_position)
-
-
-def move_vertical(x, y):
-    loop_iteration = np.linspace(0, 350, 2)
-    for z in loop_iteration:
-        print(z)
-        go_to_coordinate(x, y, round(z))
-        time.sleep(2)
-
-
-def move_horizontal(z):
-    loop_iteration = np.linspace(100, 350, 2)
-    for x in loop_iteration:
-        print(x)
-        go_to_coordinate(round(x), 0, z)
-        time.sleep(2)
-
-
-def get_previous_teta():
-    text_file = open("prev_teta.txt", "r")
-    prev_teta_string = text_file.read()
-    text_file.close()
-
-    prev_teta = list(prev_teta_string.split(";"))
-    prev_teta.pop(6)
-    prev_teta = [int(i) for i in prev_teta]
-    return prev_teta
-
-
-def open_gripper():
-    prev_angles = get_previous_teta()
-    write_position(prev_angles[0], prev_angles[1], prev_angles[2], prev_angles[3], prev_angles[4], grip="open")
-
-
-def close_gripper():
-    prev_angles = get_previous_teta()
-    write_position(prev_angles[0], prev_angles[1], prev_angles[2], prev_angles[3], prev_angles[4], grip="closed")
-
-
-def pick_up(x, y):
-    glass_pos = [310, 95]  # x, y pos of glass
-    delay = 1  # Delay between steps
-    pick_up_height = 10  # Height of the object
-    home()
-    time.sleep(delay)
-    go_to_coordinate(x, y, 100, "closed")
-    time.sleep(delay)
-    open_gripper()
-    time.sleep(delay)
-    print('pick-up foam')
-    go_to_coordinate(x, y, pick_up_height - 20, "open")
-    time.sleep(delay)
-    close_gripper()
-    time.sleep(delay)
-    go_to_coordinate(x, y, 200, "closed")
-    time.sleep(delay)
-    go_to_coordinate(glass_pos[0], glass_pos[1], 200, "closed")
-    time.sleep(delay)
-    go_to_coordinate(glass_pos[0], glass_pos[1], 120, "closed")
-    time.sleep(delay)
-    open_gripper()
-    home()
-
-
-def backlash():
-    time.sleep(5)
-    write_position(90, 0, 90, 90)
-    time.sleep(2)
-    write_position(45, 0, 90, 90)
-    time.sleep(2)
-    write_position(90, 0, 90, 90)
-
-
-def camera_compensation(x_coordinate, y_coordinate):
-    h_foam = 80  # Foam height of 80mm
-    camera_position = [480, 150, 880]  # x, y, z coordinate from origin in mm
-    # Add 300 to move origin to under the camera
-    offset = 300
-    x_coordinate = (offset - x_coordinate) + (camera_position[0] - offset)
-
-    # Perform compensation
-    x_compensated = x_coordinate - (h_foam / (camera_position[2] / x_coordinate))
-    if y_coordinate < camera_position[1]:
-        y_compensated = y_coordinate - (h_foam / (camera_position[2] / y_coordinate))
-    else:
-        y_compensated = y_coordinate + (h_foam / (camera_position[2] / y_coordinate))
-    # Subtract the offset
-    x_compensated = offset - (x_compensated - (camera_position[0] - offset))
-
-    return int(x_compensated), int(y_compensated)
-
-
-def power_on():
-    arm.write(b'1\n')
+def send_command(command):
+    arduino.write(command.encode())
+    response = arduino.readline().decode().strip()
+    print(f"Arduino Response: {response}")
+    return response
 
 
 def power_off():
-    arm.write(b'0\n')
+    send_command('0\n')
+
+
+def power_on():
+    send_command('1\n')
+
+
+def home_position():
+    # Set the arm to the initial angles specified
+    base_angle = 140
+    shoulder_angle = 110
+    elbow_angle = 50
+    command = f"P{base_angle},{shoulder_angle},{elbow_angle},90,90,73,150\n"
+    send_command(command)
+
+
+def move_to_origin():
+    home_position()  # Move to home position first
+
+
+def move_all_joints():
+    positions = [
+        "P15,15,0,0,0,10,150\n",
+        "P140,70,100,180,180,73,150\n",
+        "P90,35,50,90,90,41,150\n"
+    ]
+    for pos in positions:
+        send_command(pos)
+        time.sleep(2)
+
+
+def calculate_inverse_kinematics(x, y, z):
+    # Ensure the target is within positive Cartesian space
+    if x < 0 or y < 0:
+        raise ValueError("Target coordinates must be in the positive Cartesian space.")
+
+    # Base angle calculation
+    dx = x - base_x
+    dy = y - base_y
+    base_angle = math.degrees(math.atan2(dy, dx))
+
+    # Convert to the shoulder coordinate system
+    shoulder_x = x - (base_x + shoulder_x_offset * math.cos(math.radians(base_angle)))
+    shoulder_y = y - base_y
+    shoulder_z = z - (base_z + shoulder_z_offset)
+
+    # Distance from shoulder to target
+    d = math.sqrt(shoulder_x ** 2 + shoulder_z ** 2)
+
+    # Calculate shoulder angle using the law of cosines
+    cos_theta1 = (d ** 2 + h1 ** 2 - V1 ** 2) / (2 * d * h1)
+    cos_theta1 = np.clip(cos_theta1, -1, 1)  # Ensure within valid range
+    theta1 = math.degrees(math.acos(cos_theta1)) + math.degrees(math.atan2(shoulder_z, shoulder_x))
+
+    # Calculate elbow angle based on the parallelogram linkage
+    cos_theta2 = (V1 ** 2 + h3 ** 2 - h2 ** 2) / (2 * V1 * h3)
+    cos_theta2 = np.clip(cos_theta2, -1, 1)  # Ensure within valid range
+    theta2 = math.degrees(math.acos(cos_theta2))
+
+    shoulder_angle = theta1
+    elbow_angle = theta2
+
+    return base_angle, shoulder_angle, elbow_angle
+
+def move_to_position(x, y, z):
+    try:
+        base_angle, shoulder_angle, elbow_angle = calculate_inverse_kinematics(x, y, z)
+        # Constrain angles to their limits
+        base_angle = np.clip(base_angle, BASE_MIN_ANGLE, BASE_MAX_ANGLE)
+        shoulder_angle = np.clip(shoulder_angle, SHOULDER_MIN_ANGLE, SHOULDER_MAX_ANGLE)
+        elbow_angle = np.clip(elbow_angle, ELBOW_MIN_ANGLE, ELBOW_MAX_ANGLE)
+
+        # Log the angles
+        print(f"Moving to (x={x}, y={y}, z={z})")
+        print(f"Calculated angles -> Base: {base_angle}, Shoulder: {shoulder_angle}, Elbow: {elbow_angle}")
+
+        command = f"P{int(base_angle)},{int(shoulder_angle)},{int(elbow_angle)},90,90,73,150\n"
+        response = send_command(command)
+        if response == "E1":
+            print("Error: Invalid command or position.")
+    except ValueError as e:
+        print(e)
+
+
+def move_to_servo_angles(base, shoulder, elbow):
+    base = np.clip(base, BASE_MIN_ANGLE, BASE_MAX_ANGLE)
+    shoulder = np.clip(shoulder, SHOULDER_MIN_ANGLE, SHOULDER_MAX_ANGLE)
+    elbow = np.clip(elbow, ELBOW_MIN_ANGLE, ELBOW_MAX_ANGLE)
+
+    command = f"P{base},{shoulder},{elbow},90,90,73,150\n"
+    send_command(command)
 
 
 def main_menu():
     while True:
-        print("\nSelect a command:")
-        print("1. Home Position")
-        print("2. Rotate All Joints")
-        print("3. Open Gripper")
-        print("4. Close Gripper")
-        print("5. Pick Up Object")
-        print("6. Move Vertical")
-        print("7. Move Horizontal")
-        print("8. Power On")
-        print("9. Power Off")
-        print("10. Exit")
+        print("Select an action:")
+        print("0. Power Off")
+        print("1. Power On")
+        print("2. Home Position")
+        print("3. Move end effector to origin")
+        print("4. Move all joints")
+        print("5. Move to position via x, y, z")
+        print("6. Move position via servo angle input")
 
-        choice = input("Enter the number of your choice: ")
+        choice = input("Enter choice: ")
 
-        if choice == '1':
-            home()
-        elif choice == '2':
-            rotate_all_joints()
-        elif choice == '3':
-            open_gripper()
-        elif choice == '4':
-            close_gripper()
-        elif choice == '5':
-            x = int(input("Enter x-coordinate: "))
-            y = int(input("Enter y-coordinate: "))
-            pick_up(x, y)
-        elif choice == '6':
-            x = int(input("Enter x-coordinate: "))
-            y = int(input("Enter y-coordinate: "))
-            move_vertical(x, y)
-        elif choice == '7':
-            z = int(input("Enter z-coordinate: "))
-            move_horizontal(z)
-        elif choice == '8':
-            power_on()
-        elif choice == '9':
+        if choice == '0':
             power_off()
-        elif choice == '10':
-            print("Exiting...")
-            break
+        elif choice == '1':
+            power_on()
+        elif choice == '2':
+            home_position()
+        elif choice == '3':
+            move_to_origin()
+        elif choice == '4':
+            move_all_joints()
+        elif choice == '5':
+            x = float(input("Enter x: "))
+            y = float(input("Enter y: "))
+            z = float(input("Enter z: "))
+            move_to_position(x, y, z)
+        elif choice == '6':
+            base = int(input("Enter base angle: "))
+            shoulder = int(input("Enter shoulder angle: "))
+            elbow = int(input("Enter elbow angle: "))
+            move_to_servo_angles(base, shoulder, elbow)
         else:
-            print("Invalid choice, please try again.")
+            print("Invalid choice. Please try again.")
 
 
 if __name__ == "__main__":
-    try:
-        arm = serial.Serial('COM7', 115200, timeout=5)
-        print("Initializing arm")
-        time.sleep(2)
-        arm.write(b'H0,90,20,90,90,73,20\n')  # Home the arm at low speeds
-        time.sleep(2)
-        main_menu()
-    except serial.SerialException as e:
-        print(f"Error opening serial port: {e}")
+    power_on()
+    home_position()
+    main_menu()

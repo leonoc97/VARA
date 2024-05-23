@@ -1,3 +1,4 @@
+# Control Script
 # -*- coding: utf-8 -*-
 """
 Created on Sun Nov 28 12:21:04 2021
@@ -66,6 +67,9 @@ def write_position(theta_base=base[0], theta_shoulder=shoulder[0], theta_elbow=e
 
 def go_to_coordinate(x, y, z, grip_position="closed"):
     theta_list = solverNNA.move_to_position_cart(x, y, z)
+    if theta_list == [0, 0, 0, 0]:
+        print("Error in calculating angles. Please check the input values.")
+        return
     write_position(theta_list[0], theta_list[1], theta_list[2], grip=grip_position)
 
 
@@ -74,7 +78,10 @@ def manual_input():
         x = float(input("Enter X coordinate: "))
         y = float(input("Enter Y coordinate: "))
         z = float(input("Enter Z coordinate: "))
-        grip = input("Enter gripper state (open/closed): ")
+        grip = input("Enter gripper state (open/closed): ").strip().lower()
+        if grip not in ["open", "closed"]:
+            print("Invalid gripper state, defaulting to closed.")
+            grip = "closed"
         go_to_coordinate(x, y, z, grip)
         if input("Continue? (y/n): ").lower() != 'y':
             break
