@@ -49,7 +49,7 @@ camRgb.setIspScale(2, 3)  # downscale to 720p
 # Create a fine mesh ROIs, neglecting the first and last two rows and columns
 numRows = 30
 numCols = 30
-for row in range(2, numRows - 2):
+for row in range(5, numRows - 5):
     for col in range(2, numCols - 2):
         config = dai.SpatialLocationCalculatorConfigData()
         config.depthThresholds.lowerThreshold = 200
@@ -112,17 +112,22 @@ with dai.Device(pipeline) as device:
 
             coords = depthData.spatialCoordinates
             distance = math.sqrt(coords.x ** 2 + coords.y ** 2 + coords.z ** 2)
-            if distance > 430:  # Filter out distances between 0 and 40 cm
+            if distance > 400:  # Filter out distances between 0 and 40 cm
                 rois_with_distances.append((distance, roi, xmin, ymin, xmax, ymax))
 
-        # Find the closest ROI if available
+        # Find the 4 closest ROIs if available
         if rois_with_distances:
-            closest_roi = min(rois_with_distances, key=lambda x: x[0])
-            distance, roi, xmin, ymin, xmax, ymax = closest_roi
-            cv2.rectangle(depthFrameColor, (xmin, ymin), (xmax, ymax), color, thickness=1)
-            cv2.putText(depthFrameColor, "{:.1f}cm".format(distance / 10), (xmin + 5, ymin + 15), fontType, 0.3, color)
-            mean_depth_text = "Mean Depth: {:.1f}cm".format(distance / 10)
+            rois_with_distances.sort(key=lambda x: x[0])
+            closest_rois = rois_with_distances[:1]
+            mean_x = int(np.mean([roi[2] + (roi[4] - roi[2]) / 2 for roi in closest_rois]))
+            mean_y = int(np.mean([roi[3] + (roi[5] - roi[3]) / 2 for roi in closest_rois]))
+
+            for distance, roi, xmin, ymin, xmax, ymax in closest_rois:
+                cv2.rectangle(depthFrameColor, (xmin, ymin), (xmax, ymax), color, thickness=1)
+                cv2.putText(depthFrameColor, "{:.1f}cm".format(distance / 10), (xmin + 5, ymin + 15), fontType, 0.3, color)
+            mean_depth_text = "Mean Depth: {:.1f}cm".format(np.mean([d[0] for d in closest_rois]) / 10)
         else:
+            mean_x, mean_y = -1, -1
             mean_depth_text = "No ROI > 40cm"
 
         # Blend RGB and depth frames
@@ -132,6 +137,10 @@ with dai.Device(pipeline) as device:
 
         # Display mean depth on the blended image in white
         cv2.putText(blended, mean_depth_text, (blended.shape[1] - 300, 30), fontType, 0.6, (255, 255, 255))
+
+        # Display the mean position as a dot
+        if mean_x >= 0 and mean_y >= 0:
+            cv2.circle(blended, (mean_x, mean_y), 5, (255, 255, 255), -1)
 
         # Resize frames with factor 0.25
         rgbFrame_resized = cv2.resize(rgbFrame, (0, 0), fx=0.25, fy=0.25)
